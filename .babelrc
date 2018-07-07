@@ -1,0 +1,11 @@
+{
+  "presets": [
+     ["env", {
+      "targets": {
+        "browsers": [ "last 1 versions" ]
+      }
+    }],
+    "react"
+  ],
+  "plugins": ["syntax-async-functions"]
+}

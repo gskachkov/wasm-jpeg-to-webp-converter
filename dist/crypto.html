@@ -1,0 +1,123 @@
+<html><head>
+  <title>OdessaJS 2018 @alSkachkov</title>
+  <script src="/tasks/unibable.full.js"></script>
+  <script src="/tasks/common.js"></script>
+  <script src="/tasks/asmcrypto.all.es5.js"></script>
+  <script src="/tasks/crypto-test.js"></script>
+  <link rel="stylesheet" href="index.css">
+  <script>
+    const count = 1;
+    let resultArr = [];
+    const pwdCount = 10; 
+    const pwdLength = 20;
+    const pwdWord = "password";
+    const salt = "salt";
+    const importObject = {
+      "global": {},
+      "env": {
+        memory: new WebAssembly.Memory({initial: 10, limit: 100}),
+        table: new WebAssembly.Table({initial: 0, element: 'anyfunc'}),
+        "Math_hypot": Math.hypot,
+        "exp2f": Math.exp,
+        "expf": Math.exp,
+        "powf": Math.pow,
+        "sinf": Math.sin,
+        "round": Math.round,
+        "roundf": Math.round
+      }
+    };
+
+    let doWasmCalc; 
+
+    const copyJsStringToRust = (instance, jsString) => {
+      const { memory, stringPrepare, stringData } = instance.exports;
+
+      const encoder = new TextEncoder();
+      const encodedString = encoder.encode(jsString);
+
+      // Ask Rust code to allocate a string inside of the module's memory
+      const rustString = stringPrepare(encodedString.length);
+
+      // Get a JS view of the string data
+      const rustStringData = stringData(rustString);
+      const asBytes = new Uint8Array(memory.buffer, rustStringData, encodedString.length);
+
+      // Copy the UTF-8 into the WASM memory.
+      asBytes.set(encodedString);
+
+      return rustString;
+    };
+
+    const wasmFetch = fetch('wasm/rust_wasm.gc.wasm')
+    .then(response => response.arrayBuffer())
+    .then(bytes => WebAssembly.instantiate(bytes, importObject))
+    .then(wasm => {
+      const wasmInstance = wasm.instance;
+      const { gen_pbkdf2_param, gen_pbkdf2, pbkdf2_free_vec, pbkdf2_init, pbkdf2_vec_len } = wasmInstance.exports;
+  
+      let gpr = null;
+
+      doWasmCalc = () => {
+        resultArr = [];
+        let data = null;
+        pbkdf2_init();
+
+        const start = performance.now();
+        for (let i = 0; i < count; i++) {
+          if (gpr !== null) {
+            pbkdf2_free_vec(gpr);
+          }
+        
+          const value = copyJsStringToRust(wasmInstance, pwdWord);
+          gpr = gen_pbkdf2_param(value, pwdCount, pwdLength);
+      
+          const len = pbkdf2_vec_len(gpr);
+          data = new Uint8ClampedArray (wasmInstance.exports.memory.buffer, gpr, len);
+          resultArr.push(Uint8ClampedArray.from(data));
+        }
+        const finish = performance.now();
+
+        addResult({type: 'simpleWasm', duration:  finish - start });
+        console.log(resultArr[0]);
+      };
+    });
+    const secretBytes = asmCrypto.string_to_bytes(salt);
+
+    const doSimplePbkdf2JS = () => { 
+      resultArr = [];
+      const start = performance.now();
+      for (let i = 0; i < count; i++) { 
+        const pwdBytes = asmCrypto.string_to_bytes(pwdWord);
+        resultArr.push(asmCrypto.Pbkdf2HmacSha1(pwdBytes, secretBytes, pwdCount, pwdLength));
+      }
+      const finish = performance.now();
+      addResult({type: 'sompleJs', duration:  finish - start });
+      console.log(resultArr[0]);
+    };
+
+    const doSimplePbkdf2Native = async () => {
+      resultArr = [];
+      const start = performance.now();
+      for (let i = 0; i < count; i++) {
+        resultArr.push(await calcPBKDF2(pwdWord, pwdCount, pwdLength));
+      }
+      const finish = performance.now();
+      addResult({type: 'Native', duration:  finish - start });
+      console.log(resultArr[0]);
+    };
+  </script>
+</head>
+<body>
+<div id="app">
+  <div class="App">
+    <h1 class="App-Title">JavaScript OdessaJS 2018 @alSkachkov</h1>
+    <canvas id="canvas-1" width="300" height="300"></canvas>
+    <ul>
+      <li><span><button onclick="doSimplePbkdf2JS()">JS</button><p></p></span></li>
+      <li><span><button onclick="doSimplePbkdf2Native()">Native</button><p></p></span></li>
+      <li><span><button onclick="doWasmCalc()">Wasm</button><p></p></span></li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

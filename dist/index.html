@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+  <head>
+      <script src="/workers/wasm-worker-api.js"></script>
+      <title>JavaScript FwDays: Rust to Wasm in React Web App Demo!</title>
+      <script>
+        var Module = {
+          // When the instance has been loaded and compiled...
+          onRuntimeInitialized: () => {
+
+            // JS wrap of : Image* setSrcImage(BYTE* jpegData, ULONG size)
+            console.log('Module loaded', Module);
+            const api = {
+              setSrcImage: Module.cwrap('setSrcImage', 'number', ['number', 'number']),
+              version: Module.cwrap('version', 'number', []),
+              create_buffer: Module.cwrap('create_buffer', 'number', ['number', 'number']),
+              destroy_buffer: Module.cwrap('destroy_buffer', '', ['number']),
+              encode_bmp_to_webp: Module.cwrap('encode_bmp_to_webp', '', ['number', 'number', 'number']),
+              encode_jpeg_to_webp: Module.cwrap('encode_jpeg_to_webp', '', ['number', 'number']),
+              encode_jpeg_to_bmp: Module.cwrap('encode_jpeg_to_bmp', '', ['number', 'number']),
+              get_result_pointer: Module.cwrap('get_result_pointer', 'number', []),
+              get_result_size:  Module.cwrap('get_result_size', 'number', []),
+              free_result: Module.cwrap('free_result', '', [ 'number' ]),
+            };
+          }
+        };
+        const webp_to_canvas = [{
+          name :'create_buffer', 
+          ret: 'number', 
+          args: ['number', 'number']
+        }, {
+          name: 'encode_jpeg_to_bmp',
+          ret: '', 
+          args: [ 'number', 'number' ]
+        }, {
+          name: 'encode_jpeg_to_webp',
+          ret: 'number', 
+          args: [ 'number', 'number', 'number' ]
+        }, {
+          name: 'encode_bmp_to_webp',
+          ret: 'number', 
+          args: [ 'number', 'number', 'number' ]
+        }, {
+          name: 'create_buffer',
+          ret: 'number', 
+          args: ['number', 'number' ]
+        }, {
+          name: 'get_result_pointer',
+          ret: 'number', 
+          args: [ ]
+        }, {
+          name: 'get_result_size',
+          ret: 'number', 
+          args: [ ]
+        }, {
+          isSetter: 'true',
+          name: 'encode_setter',
+          type: '8'
+        }, {
+          isGetter: 'true',
+          name: 'encode_getter',
+          type: '8',
+          returnType: 'U8'
+        }, {
+          name :'free_result', 
+          ret: '', 
+          args: ['number']
+        }, {
+          name :'destroy_buffer', 
+          ret: '', 
+          args: ['number']
+        } ];
+        console.log(Module);
+      </script>
+      <script type="text/javascript" src="wasm-jpeg-webp.js"></script>
+      <script type="text/javascript">
+        let counts = 10;
+        let step = 10; 
+        const results = [];
+        var doJpeg2Canv2Wasm2WebpInt = async (params, getImage) => {
+          console.time('jpeg-canv-wasm-webp');
+          let result;
+          for (var i = 0; i < counts; i ++) {
+            const img = await createImageBitmap(params.inputBlobJpeg);
+              // Make canvas same size as image
+            const api = params.api;
+            const canvas = getImage('#canvas-1');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            // Draw image onto canvas
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const image = ctx.getImageData(0, 0, img.width, img.height);
+
+            const p = api.create_buffer(image.width, image.height);
+            Module.HEAP8.set(image.data, p);
+            api.encode_bmp_to_webp(p, image.width, image.height, 100);
+            const resultPointer = api.get_result_pointer();
+            const resultSize = api.get_result_size();
+            const resultView = new Uint8Array(Module.HEAP8.buffer, resultPointer, resultSize);
+            result = new Uint8Array(resultView);
+            api.free_result(resultPointer);
+            api.destroy_buffer(p);
+          }
+          console.timeEnd('jpeg-canv-wasm-webp');
+          const blob = new Blob([result], {type: 'image/webp'});
+          const blobURL = URL.createObjectURL(blob);
+          const imgWebP = document.createElement('img');
+          imgWebP.src = blobURL;
+          document.body.appendChild(imgWebP);
+        };
+
+        var doJpeg2Wasm2WebpInt = (params, getImage) => {
+          console.time('jpeg-wasm-webp');
+          const api = params.api;
+          let result
+          for (var i = 0; i < counts; i ++) {
+            let rawJpegAsTypedArray = new Uint8Array(params.inputArrayJpeg);
+            const p = api.create_buffer(227, 149);
+            Module.HEAP8.set(rawJpegAsTypedArray, p);
+            const heapType = 'HEAP8';
+            api.encode_jpeg_to_webp(p, rawJpegAsTypedArray.length, 100);
+            const resultPointer = api.get_result_pointer();
+            const resultSize = api.get_result_size();
+            const resultView = new Uint8Array(Module.HEAP8.buffer, resultPointer, resultSize);
+            result = new Uint8Array(resultView);
+            api.free_result(resultPointer);
+            api.destroy_buffer(p);
+          }
+          console.timeEnd('jpeg-wasm-webp');
+
+          const blob = new Blob([result], {type: 'image/webp'});
+          const blobURL = URL.createObjectURL(blob);
+          const img = document.createElement('img');
+          img.src = blobURL;
+          document.body.appendChild(img);
+        };
+
+        var doJpeg2Canv2Wasm2WebpWebWorkerInt = async (params, getImage, count = 1) => {
+          let resultArray;
+          const task = async () => {
+            const { create_buffer, encode_bmp_to_webp, encode_getter, encode_setter, get_result_pointer, get_result_size, free_result, destroy_buffer } = await wasmWorkerAPI(webp_to_canvas, "/wasm-jpeg-webp.js");
+            // const module = await wasmWorkerAPI(webp_to_canvas, "/wasm-jpeg-webp.js");
+            const img = await createImageBitmap(params.inputBlobJpeg);
+            // Make canvas same size as image
+            const api = params.api;
+            const canvas = getImage('#canvas-1');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            // Draw image onto canvas
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const image = ctx.getImageData(0, 0, img.width, img.height);
+            const p = await create_buffer(image.width, image.height);
+            encode_setter(image.data, p);
+            const result = await encode_bmp_to_webp(p, image.width, image.height, 100);
+            const [ptr, size] = await Promise.all([get_result_pointer(), get_result_size()]);
+            const buffer = await encode_getter(ptr, size);
+            resultArray = new Uint8Array(buffer);
+            free_result(ptr);
+            destroy_buffer(p);
+          }
+          const startTime = performance.now();
+          console.time('jpeg-canv-wasm-webp');
+          const tasks = [];
+          for (var i = 0; i < count; i ++) {
+            tasks.push(task());
+          }
+          await Promise.all(tasks);
+          console.timeEnd('jpeg-canv-wasm-webp', performance.now() - startTime);
+          const duration = performance.now() - startTime;
+          results.push({ duration, name: 'jpeg-canv-wasm-webp', count });
+
+          const blob = new Blob([resultArray], {type: 'image/webp'});
+          const blobURL = URL.createObjectURL(blob);
+          const  htmlImg= document.createElement('img');
+          htmlImg.src = blobURL;
+          document.body.appendChild(htmlImg);
+        }
+
+        var doJpeg2Wasm2WebpWorkerInt = async (params, getImage, count = 1) => {
+          const rawJpegAssign = new Uint8Array(params.inputArrayJpeg);
+
+          let resultArray;
+          const task = async () => {
+            const { create_buffer, encode_getter, encode_setter, get_result_pointer, get_result_size, encode_jpeg_to_webp, free_result, destroy_buffer } = await wasmWorkerAPI(webp_to_canvas, "/wasm-jpeg-webp.js");
+            const api = params.api;
+
+            const rawJpegAsTypedArray = new Uint8Array(rawJpegAssign.length);
+            rawJpegAsTypedArray.set(rawJpegAssign, 0);
+
+            const bufferSize = rawJpegAsTypedArray.length;
+            const p = await create_buffer(227, 149);
+            await encode_setter(rawJpegAsTypedArray, p);
+            const result = await encode_jpeg_to_webp(p, bufferSize, 100);
+
+            const [ptr, size] = await Promise.all([get_result_pointer(), get_result_size()]);
+            const buffer = await encode_getter(ptr, size);
+            resultArray = new Uint8Array(buffer);
+            free_result(ptr);
+            destroy_buffer(p);
+          }
+          console.time('jpeg-wasm-webp');
+          const startTime = performance.now();
+          const tasks = [];
+          for (var i = 0; i < count; i ++) {
+            tasks.push(task());
+          }
+          await Promise.all(tasks);
+          console.timeEnd('jpeg-wasm-webp');
+          const duration = performance.now() - startTime;
+          results.push({ duration, name: 'jpeg-wasm-webp', count });
+
+          
+          const blob = new Blob([resultArray], {type: 'image/webp'});
+          const blobURL = URL.createObjectURL(blob);
+          const img = document.createElement('img');
+          img.src = blobURL;
+          document.body.appendChild(img);
+        };
+
+        const addResult = (value) => {
+          const span = document.createElement('span');
+          span.innerText = JSON.stringify(value);
+          document.body.appendChild(span);
+        };
+
+        const addBr = () => {
+          const br = document.createElement('br');
+          document.body.appendChild(br);
+        };
+
+        const doRunAllWebWorkerTasks =  async (params, getImage) => {
+          await doJpeg2Canv2Wasm2WebpWebWorkerInt(params, getImage);
+          await doJpeg2Wasm2WebpWorkerInt(params, getImage);
+          addBr();
+          for (var j = 0; j < 10; j++ ) {
+            await doJpeg2Wasm2WebpWorkerInt(params, getImage, counts);
+            await doJpeg2Canv2Wasm2WebpWebWorkerInt(params, getImage, counts);
+            counts = counts + step;
+
+            addResult(results[results.length - 1]);
+            addResult(results[results.length - 2]);
+            addBr();
+          }
+          console.log(results);
+          addResult(results);
+          console.table(results);
+        };
+      </script>
+      <script type="text/javascript">
+        const threadsCount = 16;
+        const imageCount = 300;
+        const threads = [];
+        const images = [];
+        let imageResults = [];
+        let startTime;
+        let finishTime;
+        const fillThreads = async () => {
+          for (let i = 0; i < threadsCount; i++ ) {
+            const api = await wasmWorkerAPI(webp_to_canvas, "/wasm-jpeg-webp.js");
+            threads.push(api);
+          }
+        };
+        const fillImagesBmp = (jpeg) => {
+          for (let i = 0; i < imageCount; i++ ) {
+            images.push(jpeg);
+          }
+        };
+
+        const fillImages = (jpeg) => {
+          for (let i = 0; i < imageCount; i++ ) {
+            const rawJpegAssign = new Uint8Array(jpeg);
+            const rawJpegAsTypedArray = new Uint8Array(rawJpegAssign.length);
+            rawJpegAsTypedArray.set(rawJpegAssign, 0);
+            images.push(rawJpegAsTypedArray);
+          }
+        };
+
+        const runThreadBmp = async (thread, getImage, continueResolve) => {
+          while (images.length > 0) {
+            const blob = images.pop();
+            const img = await createImageBitmap(blob);
+            // Make canvas same size as image
+            const canvas = getImage('#canvas-1');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            // Draw image onto canvas
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const image = ctx.getImageData(0, 0, img.width, img.height);
+            const p = await thread.create_buffer(image.width, image.height);
+            thread.encode_setter(image.data, p);
+            const result = await thread.encode_bmp_to_webp(p, image.width, image.height, 100);
+            const [ptr, size] = await Promise.all([thread.get_result_pointer(), thread.get_result_size()]);
+            const buffer = await thread.encode_getter(ptr, size);
+            const resultImage = new Uint8Array(buffer);
+            thread.free_result(ptr);
+            thread.destroy_buffer(p);
+            imageResults.push(resultImage);
+            if (imageResults.length >= imageCount) {
+              finishTime = performance.now();
+              console.log('Threading:', finishTime - startTime);
+
+              const blobR = new Blob([resultImage], {type: 'image/webp'});
+              const blobURL = URL.createObjectURL(blobR);
+              const img = document.createElement('img');
+              img.src = blobURL;
+              document.body.appendChild(img);
+
+              const threadJpgToWebPOverBmp = {type: 'threadJpgToWebPOverBmp', duration: finishTime - startTime }
+              addResult(threadJpgToWebPOverBmp);
+              continueResolve('');
+              return;
+            }
+          }
+        };
+
+        const runThread = async (thread, getImage) => {
+          while (images.length > 0) {
+            const blob = images.pop();
+            
+            const bufferSize = blob.length;
+            const p = await thread.create_buffer(227, 149);
+            await thread.encode_setter(blob, p);
+            const result = await thread.encode_jpeg_to_webp(p, bufferSize, 100);
+
+            const [ptr, size] = await Promise.all([thread.get_result_pointer(), thread.get_result_size()]);
+            const buffer = await thread.encode_getter(ptr, size);
+            const resultImage = new Uint8Array(buffer);
+            thread.free_result(ptr);
+            thread.destroy_buffer(p);
+            imageResults.push(resultImage);
+            if (imageResults.length >= imageCount) {
+              finishTime = performance.now();
+              console.log('Threading:', finishTime - startTime);
+
+              const blobR = new Blob([resultImage], {type: 'image/webp'});
+              const blobURL = URL.createObjectURL(blobR);
+              const img = document.createElement('img');
+              img.src = blobURL;
+              document.body.appendChild(img);
+
+              addResult({type: 'threadJpgToWebP', duration: finishTime - startTime });
+              return;
+            }
+          }
+        };
+
+        const doJpeg2WebpOverBmpThreadsInt = async (params, getImage) => {
+          await fillThreads();
+          let continueResolve;
+          var promise = new Promise((resolve)=> {
+            continueResolve = resolve;
+          })
+
+          fillImagesBmp(params.inputBlobJpeg);
+          startTime = performance.now();
+          for (let i = 0; i < threadsCount; i++) {
+            runThreadBmp(threads[i], getImage, continueResolve);
+          }
+
+          await promise;
+          imageResults = [];
+          fillImages(params.inputArrayJpeg);
+          startTime = performance.now();
+          for (let i = 0; i < threadsCount; i++) {
+            runThread(threads[i], getImage);
+          }
+        };
+      </script>
+      <link rel="stylesheet" href="index.css">
+  </head>
+  <body>
+    <div id="app"></div>
+    <script src="/bundle.js"></script>
+  </body>
+</html>

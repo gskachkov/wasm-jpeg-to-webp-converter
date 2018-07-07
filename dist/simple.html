@@ -1,0 +1,58 @@
+<html><head>
+  <title>OdessaJS 2018 @alSkachkov</title>
+  <script src="/workers/wasm-worker-api.js"></script>
+  <script src="/tasks/wasm-interface.js"></script>
+  <script src="wasm-jpeg-webp.js"></script>
+  <script src="/tasks/common.js"></script>
+  <script src="/tasks/init.js"></script>
+  <script src="/tasks/simple.js"></script>
+  <script src="/tasks/threads.js"></script>
+  <script src="/tasks/libwebp.js"></script>
+  <script type="text/javascript">
+    doInit();
+  </script>
+  <script type="text/javascript">
+    let counts = 1000;
+    const results = [];
+    
+    var simpleComparer = new SimpleComparer(counts, params.api, getImage, drawImage);
+    
+    const doSimpleConverJpegToWebP = async () => {
+      const duration = simpleComparer.convertJpegToWebP(params.inputArrayJpeg);
+      const durationOverBmp = await simpleComparer.convertJpegToWebPOverBmpAsync(params.inputBlobJpeg);
+      const durationJS = await simpleComparer.convertJpegToWebPWithJS(params.inputBlobJpeg);
+      addResult({type: 'SimpleOverBmp', duration:  durationOverBmp });
+      addResult({type: 'Simple', duration:  duration});
+      addResult({type: 'SimpleJS', duration:  durationJS});
+    };
+  </script>
+  <script type="text/javascript">
+    const threadsCount = 16;
+    const imageCount = 400;
+    const threadsComparer = new ThreadsComparer(threadsCount, params.api, getImage, drawImage, imageCount);
+
+    const doRunThreads = async () => {
+      await threadsComparer.fillThreadsAsync('/tasks/libwebp.js');
+      const durationOverBmp = await threadsComparer.convertJpegToWebPOverBmpAsync(params.inputBlobJpeg);
+      const duration = await threadsComparer.convertJpegToWebPAsync(params.inputArrayJpeg);
+      const durationJs = await threadsComparer.convertJpegToWebPOverBmpJsAsync(params.inputBlobJpeg);
+      addResult({type: 'SimpleOverBmp-Thread', duration:  durationOverBmp });
+      addResult({type: 'Simple-Thread', duration:  duration});
+      addResult({type: 'Simple-JS-Thread', duration:  durationJs});
+    };
+  </script>
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+<div id="app">
+  <div class="App">
+    <h1 class="App-Title">JavaScript OdessaJS 2018 @alSkachkov</h1>
+    <canvas id="canvas-1" width="300" height="300"></canvas>
+    <ul>
+      <li><span><button onclick="doSimpleConverJpegToWebP()">Simple</button><p></p></span></li>
+      <li><span><button onclick="doRunThreads()">Threads</button><p></p></span></li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>
